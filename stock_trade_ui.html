@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>퀀텀 트레이더 - 국내주식</title>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap');
+
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .font-mono {
+            font-family: 'Rajdhani', monospace;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        .neon-text-cyan {
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+        }
+
+        .neon-border-cyan {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.15);
+            border-color: rgba(6, 182, 212, 0.5);
+        }
+
+        .neon-text-green {
+            text-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+        }
+
+        .neon-text-red {
+            text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .animate-pulse-fast {
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const App = () => {
+            const [status, setStatus] = useState({
+                isRunning: false,
+                mode: 'paper',
+                balance: 0,
+                totalBuyAmount: 0,
+                stocks: {},
+                target_info: {},
+                logs: [],
+                summary: { dailyProfit: 0, tradeCount: 0, winCount: 0 },
+                config: { market: 'SIDEWAYS', rsi: 50, reason: '분석 대기중', targetProfit: 3.0, stopLoss: -3.0 }
+            });
+
+            useEffect(() => {
+                fetchStatus();
+                const interval = setInterval(fetchStatus, 2000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const fetchStatus = async () => {
+                try {
+                    const res = await fetch('/api/status');
+                    const data = await res.json();
+                    setStatus(data);
+                } catch (err) { console.error(err); }
+            };
+
+            const handleStart = async () => await fetch('/api/start', { method: 'POST' });
+            const handleStop = async () => await fetch('/api/stop', { method: 'POST' });
+            const handleMode = async (mode) => {
+                await fetch('/api/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                fetchStatus();
+            };
+
+            const fmtNum = (n) => new Intl.NumberFormat('ko-KR').format(n || 0);
+
+            const totalAsset = status.balance + status.totalBuyAmount;
+            const investRatio = totalAsset > 0 ? (status.totalBuyAmount / totalAsset) * 100 : 0;
+            const winRate = status.summary.tradeCount > 0 ? (status.summary.winCount / status.summary.tradeCount) * 100 : 0;
+
+            const isBull = status.config?.market === 'BULL';
+            const isBear = status.config?.market === 'BEAR';
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-20">
+
+                    {/* HEADER */}
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-slate-800 pb-6">
+                        <div>
+                            <h1 className="text-4xl font-bold tracking-tighter text-white neon-text-cyan flex items-center gap-3">
+                                <span className="text-cyan-400">QUANTUM</span> TRADER <span className="text-xs bg-cyan-950 text-cyan-400 px-2 py-1 rounded border border-cyan-500/30">국내주식</span>
+                            </h1>
+                            <p className="text-slate-500 text-sm tracking-widest mt-1 pl-1">AI 기반 자동매매 시스템</p>
+                        </div>
+
+                        <div className="flex flex-wrap justify-center gap-3 mt-4 md:mt-0">
+                            <div className={`px-4 py-2 rounded-lg border font-bold flex items-center gap-2 transition-all ${status.isRunning ? 'bg-green-950/30 border-green-500/50 text-green-400 neon-border-cyan' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                                <div className={`w-2 h-2 rounded-full ${status.isRunning ? 'bg-green-400 animate-pulse-fast' : 'bg-slate-500'}`}></div>
+                                {status.isRunning ? '가동중' : '중지됨'}
+                            </div>
+
+                            <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                <button onClick={() => handleMode('paper')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${status.mode === 'paper' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-500 hover:text-slate-300'}`}>모의투자</button>
+                                <button onClick={() => handleMode('real')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${status.mode === 'real' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/50' : 'text-slate-500 hover:text-slate-300'}`}>실전투자</button>
+                            </div>
+
+                            <button onClick={status.isRunning ? handleStop : handleStart} className={`px-6 py-2 rounded-lg font-bold border transition-all shadow-lg transform active:scale-95 ${status.isRunning ? 'bg-red-600 hover:bg-red-500 border-red-400 text-white shadow-red-900/50' : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-cyan-900/50'}`}>
+                                {status.isRunning ? '시스템 종료' : '시스템 시작'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* DASHBOARD GRID */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+
+                        {/* 자산 현황 */}
+                        <div className="glass-panel p-6 rounded-2xl border-l-4 border-l-cyan-500 relative overflow-hidden group hover:bg-slate-800/50 transition-colors">
+                            <h3 className="text-cyan-400 text-xs font-bold tracking-widest uppercase mb-4">💼 자산 포트폴리오</h3>
+                            <div className="space-y-3 font-mono text-sm">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-400 text-xs uppercase">매수평가금</span>
+                                    <span className="text-white font-bold text-lg">{fmtNum(status.totalBuyAmount)} <span className="text-xs font-normal text-slate-500">원</span></span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-400 text-xs uppercase">보유현금</span>
+                                    <span className="text-cyan-300 font-bold text-lg">{fmtNum(status.balance)} <span className="text-xs font-normal text-slate-500">원</span></span>
+                                </div>
+                            </div>
+                            <div className="mt-4">
+                                <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                                    <span>투자비중</span>
+                                    <span>{investRatio.toFixed(1)}%</span>
+                                </div>
+                                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                    <div className="h-full transition-all duration-500 bg-cyan-500" style={{ width: `${Math.min(investRatio, 100)}%` }}></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 일일 손익 */}
+                        <div className={`glass-panel p-6 rounded-2xl border-l-4 relative overflow-hidden group hover:bg-slate-800/50 transition-colors ${status.summary.dailyProfit >= 0 ? 'border-l-blue-500' : 'border-l-pink-500'}`}>
+                            <h3 className={`text-xs font-bold tracking-widest uppercase mb-2 ${status.summary.dailyProfit >= 0 ? 'text-blue-400' : 'text-pink-400'}`}>📊 일일 수익률</h3>
+                            <div className={`text-3xl font-black font-mono mt-4 ${status.summary.dailyProfit >= 0 ? 'text-blue-400' : 'text-pink-400'}`}>
+                                {status.summary.dailyProfit > 0 ? '+' : ''}{fmtNum(status.summary.dailyProfit)} <span className="text-sm font-normal text-slate-500">원</span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">오늘 실현 손익</p>
+                        </div>
+
+                        {/* 승률 */}
+                        <div className="glass-panel p-6 rounded-2xl border-l-4 border-l-purple-500 relative overflow-hidden group hover:bg-slate-800/50 transition-colors">
+                            <h3 className="text-purple-400 text-xs font-bold tracking-widest uppercase mb-2">🎯 거래 승률</h3>
+                            <div className="text-3xl font-black text-white font-mono mt-4">
+                                {winRate.toFixed(1)}%
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">{status.summary.tradeCount}회 거래 완료</p>
+                        </div>
+
+                        {/* 시장 상태 */}
+                        <div className={`glass-panel p-6 rounded-2xl border-l-4 relative overflow-hidden group hover:bg-slate-800/50 transition-colors ${isBull ? 'border-l-green-500 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : isBear ? 'border-l-red-500 shadow-[0_0_20px_rgba(239,68,68,0.1)]' : 'border-l-slate-500'}`}>
+                            <h3 className="text-slate-400 text-xs font-bold tracking-widest uppercase mb-2">📈 시장 상태</h3>
+                            <div className={`text-4xl font-black uppercase tracking-tighter mt-2 ${isBull ? 'text-green-400 neon-text-green' : isBear ? 'text-red-500 neon-text-red' : 'text-slate-300'}`}>
+                                {status.config.market || 'SIDEWAYS'}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-2 font-medium truncate">{status.config.reason}</p>
+                        </div>
+                    </div>
+
+                    {/* MAIN CONTENT SPLIT */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+
+                        {/* LEFT: HOLDINGS PORTFOLIO */}
+                        <div className="lg:col-span-2 glass-panel rounded-2xl overflow-hidden flex flex-col h-[500px] border-none ring-1 ring-slate-700/50">
+                            <div className="p-5 border-b border-slate-700/50 flex justify-between items-center bg-slate-800/30">
+                                <h3 className="text-cyan-400 font-bold tracking-widest text-sm">
+                                    📋 보유 종목 포트폴리오
+                                </h3>
+                                <span className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded font-mono">보유수: {Object.keys(status.stocks).length}</span>
+                            </div>
+
+                            <div className="overflow-auto custom-scrollbar flex-1 bg-[#0B0E14]/50">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-900/80 text-slate-400 text-[11px] uppercase font-bold sticky top-0 z-10 backdrop-blur-sm">
+                                        <tr>
+                                            <th className="p-4 pl-6">종목명</th>
+                                            <th className="p-4 text-right">평단가</th>
+                                            <th className="p-4 text-right">현재가</th>
+                                            <th className="p-4 text-right">수량</th>
+                                            <th className="p-4 text-right pr-6">수익률</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/50 font-mono">
+                                        {Object.entries(status.stocks).map(([code, stock]) => {
+                                            const currentPrice = status.target_info[code]?.price || 0;
+                                            const profit = currentPrice ? ((currentPrice - stock.buy_price) / stock.buy_price * 100) : 0;
+                                            return (
+                                                <tr key={code} className={`hover:bg-cyan-900/10 transition-colors ${stock.suspended ? 'opacity-50' : ''}`}>
+                                                    <td className="p-4 pl-6">
+                                                        <div className="font-bold text-slate-200">{stock.name}</div>
+                                                        <div className="text-[10px] text-slate-500">{code} {stock.suspended && '(거래정지)'}</div>
+                                                    </td>
+                                                    <td className="p-4 text-right text-slate-400">{fmtNum(stock.buy_price)}</td>
+                                                    <td className="p-4 text-right text-slate-200 font-bold">{currentPrice ? fmtNum(currentPrice) : '-'}</td>
+                                                    <td className="p-4 text-right text-cyan-600 font-medium">{stock.qty}</td>
+                                                    <td className="p-4 text-right pr-6">
+                                                        <div className={`font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                            {profit > 0 ? '+' : ''}{profit.toFixed(2)}%
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {Object.keys(status.stocks).length === 0 && (
+                                            <tr>
+                                                <td colSpan="5" className="h-64 text-center text-slate-600">
+                                                    <div className="flex flex-col items-center gap-3">
+                                                        <span className="text-5xl opacity-20">📭</span>
+                                                        <span className="text-sm font-medium">현재 보유 중인 포지션이 없습니다.</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* RIGHT: MARKET STRATEGY */}
+                        <div className="glass-panel rounded-2xl p-6 flex flex-col justify-between h-[500px] border-none ring-1 ring-slate-700/50">
+                            <div>
+                                <h3 className="text-cyan-400 font-bold tracking-widest text-sm mb-6">
+                                    ⚡ 전략 지표
+                                </h3>
+
+                                {/* RSI Visualization */}
+                                <div className="mb-8 p-4 bg-slate-900/50 rounded-xl border border-slate-800">
+                                    <div className="flex justify-between text-xs font-bold text-slate-400 mb-2">
+                                        <span>약세</span>
+                                        <span className="text-white bg-slate-700 px-2 py-0.5 rounded">RSI: {status.config?.rsi?.toFixed(1) || 50}</span>
+                                        <span>강세</span>
+                                    </div>
+                                    <div className="relative h-3 bg-slate-800 rounded-full overflow-hidden">
+                                        <div className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 w-full opacity-40"></div>
+                                        <div className="absolute top-0 bottom-0 bg-white w-1 shadow-[0_0_15px_white] z-10 transition-all duration-1000" style={{ left: `${status.config?.rsi || 50}%` }}></div>
+                                    </div>
+                                    <div className="flex justify-between text-[10px] text-slate-600 mt-2 uppercase font-medium">
+                                        <span>과매도</span>
+                                        <span>중립</span>
+                                        <span>과매수</span>
+                                    </div>
+                                </div>
+
+                                {/* TP / SL Cards */}
+                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                    <div className="bg-green-950/20 border border-green-500/20 p-4 rounded-xl text-center relative overflow-hidden">
+                                        <div className="text-[10px] text-green-500 uppercase font-bold mb-1 tracking-wider">익절 목표</div>
+                                        <div className="text-3xl font-black text-green-400 neon-text-green font-mono">+{status.config?.targetProfit}%</div>
+                                    </div>
+                                    <div className="bg-red-950/20 border border-red-500/20 p-4 rounded-xl text-center relative overflow-hidden">
+                                        <div className="text-[10px] text-red-500 uppercase font-bold mb-1 tracking-wider">손절 제한</div>
+                                        <div className="text-3xl font-black text-red-400 neon-text-red font-mono">{status.config?.stopLoss}%</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Analysis Text */}
+                            <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+                                <div className="text-xs text-cyan-400 font-bold mb-2 uppercase">💡 시스템 분석</div>
+                                <p className="text-sm text-slate-300 leading-relaxed font-medium">
+                                    {status.config.reason || "시장 데이터를 분석하고 있습니다..."}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* BOTTOM: SYSTEM LOGS */}
+                    <div className="glass-panel rounded-2xl overflow-hidden flex flex-col h-[250px] border-none ring-1 ring-slate-700/50">
+                        <div className="p-4 border-b border-slate-700/50 bg-slate-800/40 flex justify-between items-center">
+                            <h3 className="text-slate-400 font-bold tracking-widest text-xs uppercase">
+                                📜 실시간 시스템 로그
+                            </h3>
+                            <span className="text-[10px] text-slate-600 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> LIVE</span>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 font-mono text-xs space-y-1.5 bg-[#050505] custom-scrollbar">
+                            {status.logs.length === 0 && <div className="text-slate-700 italic text-center mt-10">로그 기록 대기중...</div>}
+                            {status.logs.map((log, i) => (
+                                <div key={i} className="flex gap-4 hover:bg-slate-900/50 p-1 rounded transition-colors items-start">
+                                    <span className="text-slate-600 min-w-[70px]">[{log.time}]</span>
+                                    <span className={`${log.type === 'BUY' ? 'text-green-400' : log.type === 'SELL' ? 'text-red-400' : log.type === 'ERROR' ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>
+                                        {log.msg}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="text-center mt-8 text-slate-600 text-xs font-mono">
+                        QUANTUM TRADER PTY LTD. ALL RIGHTS RESERVED.
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
