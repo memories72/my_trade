@@ -191,6 +191,10 @@ except FileNotFoundError:
                                 <button onClick={() => handleMode('paper')} className={`mode-btn ${status.mode === 'paper' ? 'mode-active' : 'mode-inactive'}`}>PAPER</button>
                                 <button onClick={() => handleMode('real')} className={`mode-btn ${status.mode === 'real' ? 'mode-active' : 'mode-inactive'}`}>REAL</button>
                             </div>
+                            <div className="flex bg-gray-800 rounded-lg p-1">
+                                <button onClick={() => handleMarket('domestic')} className={`mode-btn ${status.marketType === 'domestic' ? 'mode-active' : 'mode-inactive'}`}>🇰🇷 국내</button>
+                                <button onClick={() => handleMarket('overseas')} className={`mode-btn ${status.marketType === 'overseas' ? 'mode-active' : 'mode-inactive'}`}>🇺🇸 해외</button>
+                            </div>
                             <button 
                                 onClick={status.isRunning ? handleStop : handleStart}
                                 className={`btn-primary ${status.isRunning ? 'btn-danger' : ''}`}
@@ -208,11 +212,11 @@ except FileNotFoundError:
                             <div className="flex flex-col gap-2 mt-2">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-400">Stocks (Used)</span>
-                                    <span className="text-white font-bold">{fmtNum(status.totalBuyAmount)}원</span>
+                                    <span className="text-white font-bold">{status.currency === 'KRW' ? fmtNum(status.totalBuyAmount) + '원' : '$' + fmtNum(status.totalBuyAmount)}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-400">Cash (Free)</span>
-                                    <span className="text-cyan-300 font-bold">{fmtNum(status.balance)}원</span>
+                                    <span className="text-cyan-300 font-bold">{status.currency === 'KRW' ? fmtNum(status.balance) + '원' : '$' + fmtNum(status.balance)}</span>
                                 </div>
                                 <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden mt-1 relative">
                                     <div className="bg-cyan-500 h-full transition-all duration-500 absolute top-0 left-0" style={{width: `${calcRatio()}%`}}></div>
@@ -224,7 +228,7 @@ except FileNotFoundError:
                         <div className="stat-card">
                             <div className="stat-label">DAILY P&L</div>
                             <div className={`stat-value ${status.summary.dailyProfit >= 0 ? 'text-profit' : 'text-loss'}`}>
-                                {status.summary.dailyProfit > 0 ? '+' : ''}{fmtNum(status.summary.dailyProfit)}원
+                                {status.summary.dailyProfit > 0 ? '+' : ''}{status.currency === 'KRW' ? fmtNum(status.summary.dailyProfit) + '원' : '$' + fmtNum(status.summary.dailyProfit)}
                             </div>
                         </div>
 
@@ -423,6 +427,10 @@ PAPER_ACCOUNT_PROD = os.environ.get("PAPER_ACCOUNT_PROD", "01")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
 
+# 해외주식 설정
+OVERSEAS_EXCHANGE = os.environ.get("OVERSEAS_EXCHANGE", "NASD")  # NASD (미국전체), NAS (나스닥), NYSE (뉴욕)
+DEFAULT_MARKET = os.environ.get("DEFAULT_MARKET", "domestic")  # domestic 또는 overseas
+
 # 계좌 정보 로드 확인 로그
 if not KIS_ACCOUNT_NO:
     print("[CRITICAL ERROR] KIS_ACCOUNT_NO is empty! Check your .env file.")
@@ -460,7 +468,16 @@ try:
     from domestic_stock_functions import inquire_price, inquire_daily_price, order_cash, inquire_balance, inquire_investor
 except ImportError as e:
     print(f"KIS Open API 모듈 로드 실패 (의존성 파일 확인 필요): {e}")
-    pass 
+    pass
+
+# 해외주식 모듈 import
+try:
+    from overseas_stock_functions import price as overseas_price, inquire_balance as overseas_inquire_balance, order as overseas_order
+    OVERSEAS_AVAILABLE = True
+    print("[INFO] Overseas stock module loaded successfully")
+except ImportError as e:
+    print(f"[WARN] 해외주식 모듈 로드 실패 (기능 제한): {e}")
+    OVERSEAS_AVAILABLE = False 
 
 app = FastAPI()
 app.add_middleware(
@@ -478,10 +495,24 @@ class StockBot:
     def __init__(self):
         self.is_running = False
         self.mode = "paper"
+        
+        # 시장 타입 (domestic 또는 overseas)
+        self.market_type = DEFAULT_MARKET  # "domestic" 또는 "overseas"
+        self.overseas_exchange = OVERSEAS_EXCHANGE  # "NASD", "NYSE", "AMEX" 등
+        self.currency = "KRW" if self.market_type == "domestic" else "USD"
+        
         self.target_profit = 3.0
         self.stop_loss = -3.0
         self.max_stock_count = 5
-        self.target_stocks = ["005930", "000660", "035420", "035720", "005380"] 
+        
+        # 국내주식 종목 리스트
+        self.domestic_target_stocks = ["005930", "000660", "035420", "035720", "005380"]
+        # 해외주식 종목 리스트 (미국 주식)
+        self.overseas_target_stocks = ["AAPL", "TSLA", "GOOGL", "MSFT", "AMZN"]
+        
+        # 현재 시장에 맞는 종목 리스트 설정
+        self.target_stocks = self.domestic_target_stocks if self.market_type == "domestic" else self.overseas_target_stocks
+        
         self.target_stock_info = {} 
         self.bought_stocks = {} 
         self.balance = 0 # 예수금
@@ -533,6 +564,30 @@ class StockBot:
         self.log(f"모드 변경 완료: {mode.upper()}", "SYSTEM")
         # 모드 변경 시 계좌 정보 재동기화
         self.update_account_info()
+    
+    def change_market(self, market_type):
+        """시장 타입 변경 (domestic <-> overseas)"""
+        if market_type not in ["domestic", "overseas"]:
+            self.log(f"잘못된 시장 타입: {market_type}", "ERROR")
+            return
+        
+        if market_type == "overseas" and not OVERSEAS_AVAILABLE:
+            self.log("해외주식 모듈이 로드되지 않아 해외 시장으로 전환할 수 없습니다", "ERROR")
+            return
+        
+        self.market_type = market_type
+        self.currency = "KRW" if market_type == "domestic" else "USD"
+        self.target_stocks = self.domestic_target_stocks if market_type == "domestic" else self.overseas_target_stocks
+        
+        # 기존 데이터 초기화 (시장 전환 시)
+        self.bought_stocks = {}
+        self.target_stock_info = {}
+        
+        market_name = "국내" if market_type == "domestic" else "해외"
+        self.log(f"시장 변경 완료: {market_name} ({self.currency})", "SYSTEM")
+        
+        # 시장 변경 시 계좌 정보 재동기화
+        self.update_account_info()
 
     def check_is_suspended(self, code):
         """종목 거래정지 여부 확인 (코드 58: 거래정지)"""
@@ -547,75 +602,109 @@ class StockBot:
         except: return False
 
     def update_account_info(self):
-        """계좌 잔고 및 보유 종목 동기화 함수"""
-        if 'inquire_balance' not in globals(): return
-        
+        """계좌 잔고 및 보유 종목 동기화 함수 (국내/해외 자동 선택)"""
         try:
             env_dv = "real" if self.mode == "real" else "demo"
-            res = inquire_balance(
-                env_dv=env_dv,
-                cano=KIS_ACCOUNT_NO,
-                acnt_prdt_cd=KIS_ACCOUNT_PROD,
-                afhr_flpr_yn="N",
-                inqr_dvsn="02",
-                unpr_dvsn="01",
-                fund_sttl_icld_yn="N",
-                fncg_amt_auto_rdpt_yn="N",
-                prcs_dvsn="00"
-            )
             
-            if res is None: return
-
-            if isinstance(res, tuple) and len(res) == 2:
-                holdings_data = res[0]
-                summary_data = res[1]
+            if self.market_type == "domestic":
+                # 국내주식 잔고 조회
+                if 'inquire_balance' not in globals(): return
                 
-                if hasattr(summary_data, 'iloc') and not summary_data.empty: 
-                    self.balance = float(summary_data.iloc[0]['dnca_tot_amt']) 
-                    self.total_buy_amount = float(summary_data.iloc[0].get('pchs_amt_smtl_amt', 0)) 
-                elif isinstance(summary_data, list) and len(summary_data) > 0: 
-                    self.balance = float(summary_data[0].get('dnca_tot_amt', 0))
-                    self.total_buy_amount = float(summary_data[0].get('pchs_amt_smtl_amt', 0))
+                # kis_auth가 선택한 계좌 사용
+                res = inquire_balance(
+                    env_dv=env_dv,
+                    cano=ka.getTREnv().my_acct,
+                    acnt_prdt_cd=ka.getTREnv().my_prod,
+                    afhr_flpr_yn="N",
+                    inqr_dvsn="02",
+                    unpr_dvsn="01",
+                    fund_sttl_icld_yn="N",
+                    fncg_amt_auto_rdpt_yn="N",
+                    prcs_dvsn="00"
+                )
+                
+                if res is None: return
 
-                if hasattr(holdings_data, 'iterrows') and not holdings_data.empty: 
-                    for _, row in holdings_data.iterrows():
-                        code = row['pdno']
-                        qty = int(row['hldg_qty'])
+                if isinstance(res, tuple) and len(res) == 2:
+                    holdings_data = res[0]
+                    summary_data = res[1]
+                    
+                    if hasattr(summary_data, 'iloc') and not summary_data.empty: 
+                        self.balance = float(summary_data.iloc[0]['dnca_tot_amt']) 
+                        self.total_buy_amount = float(summary_data.iloc[0].get('pchs_amt_smtl_amt', 0)) 
+                    elif isinstance(summary_data, list) and len(summary_data) > 0: 
+                        self.balance = float(summary_data[0].get('dnca_tot_amt', 0))
+                        self.total_buy_amount = float(summary_data[0].get('pchs_amt_smtl_amt', 0))
+
+                    if hasattr(holdings_data, 'iterrows') and not holdings_data.empty: 
+                        for _, row in holdings_data.iterrows():
+                            code = row['pdno']
+                            qty = int(row['hldg_qty'])
+                            if qty > 0:
+                                self.bought_stocks[code] = {
+                                    "buy_price": float(row['pchs_avg_pric']),
+                                    "qty": qty,
+                                    "high_price": float(row['prpr']),
+                                    "name": row['prdt_name'],
+                                    "suspended": False
+                                }
+                    
+                    # 거래정지 상태 업데이트
+                    for code in list(self.bought_stocks.keys()):
+                        if self.check_is_suspended(code):
+                            self.bought_stocks[code]['suspended'] = True
+
+                    # 총 매입금액 수동 계산 (API 미제공 시)
+                    if self.total_buy_amount == 0 and self.bought_stocks:
+                        self.total_buy_amount = sum(s['buy_price'] * s['qty'] for s in self.bought_stocks.values())
+
+                    self.log(f"계좌 동기화 완료: 예수금 {self.balance:,.0f}원, 매입금 {self.total_buy_amount:,.0f}원", "SYSTEM")
+            
+            else:  # overseas
+                # 해외주식 잔고 조회
+                if not OVERSEAS_AVAILABLE or 'overseas_inquire_balance' not in globals():
+                    self.log("해외주식 모듈 없음 - 잔고 조회 불가", "ERROR")
+                    return
+                
+                # kis_auth가 선택한 계좌 사용
+                holdings, summary = overseas_inquire_balance(
+                    cano=ka.getTREnv().my_acct,
+                    acnt_prdt_cd=ka.getTREnv().my_prod,
+                    ovrs_excg_cd=self.overseas_exchange,
+                    tr_crcy_cd="USD",
+                    env_dv=env_dv
+                )
+                
+                # 요약 정보에서 예수금 추출
+                if not summary.empty:
+                    # 해외주식 API의 output2에서 잔고 정보 추출
+                    # 필드명이 다를 수 있으므로 여러 가능성 체크
+                    if 'frcr_dncl_amt_2' in summary.columns:  # 외화 예수금
+                        self.balance = float(summary.iloc[0].get('frcr_dncl_amt_2', 0))
+                    elif 'ord_psbl_frcr_amt' in summary.columns:  # 주문가능 외화금액
+                        self.balance = float(summary.iloc[0].get('ord_psbl_frcr_amt', 0))
+                
+                # 보유 종목 정보 추출
+                if not holdings.empty:
+                    self.total_buy_amount = 0
+                    for _, row in holdings.iterrows():
+                        code = row.get('ovrs_pdno', '')  # 해외상품번호
+                        if not code:
+                            continue
+                        qty = int(row.get('ovrs_cblc_qty', 0))  # 해외잔고수량
                         if qty > 0:
+                            buy_price = float(row.get('pchs_avg_pric', 0))  # 매입평균가격
+                            current_price = float(row.get('now_pric2', 0))  # 현재가
                             self.bought_stocks[code] = {
-                                "buy_price": float(row['pchs_avg_pric']),
+                                "buy_price": buy_price,
                                 "qty": qty,
-                                "high_price": float(row['prpr']),
-                                "name": row['prdt_name'],
+                                "high_price": current_price,
+                                "name": row.get('ovrs_item_name', code),  # 해외종목명
                                 "suspended": False
                             }
-            
-            elif hasattr(res, 'iterrows') and not res.empty:
-                for _, row in res.iterrows():
-                    if 'dnca_tot_amt' in row:
-                        self.balance = float(row['dnca_tot_amt'])
-                    if 'pdno' in row and 'hldg_qty' in row:
-                        code = row['pdno']
-                        qty = int(row['hldg_qty'])
-                        if qty > 0:
-                            self.bought_stocks[code] = {
-                                "buy_price": float(row['pchs_avg_pric']),
-                                "qty": qty,
-                                "high_price": float(row['prpr']),
-                                "name": row['prdt_name'],
-                                "suspended": False
-                            }
-            
-            # 거래정지 상태 업데이트
-            for code in list(self.bought_stocks.keys()):
-                if self.check_is_suspended(code):
-                    self.bought_stocks[code]['suspended'] = True
-
-            # 총 매입금액 수동 계산 (API 미제공 시)
-            if self.total_buy_amount == 0 and self.bought_stocks:
-                self.total_buy_amount = sum(s['buy_price'] * s['qty'] for s in self.bought_stocks.values())
-
-            self.log(f"계좌 동기화 완료: 예수금 {self.balance:,.0f}원, 매입금 {self.total_buy_amount:,.0f}원", "SYSTEM")
+                            self.total_buy_amount += buy_price * qty
+                
+                self.log(f"계좌 동기화 완료: 예수금 ${self.balance:,.2f}, 매입금 ${self.total_buy_amount:,.2f}", "SYSTEM")
 
         except Exception as e:
             self.log(f"계좌 동기화 실패: {e}", "ERROR")
@@ -761,61 +850,124 @@ class StockBot:
         qty = int(self.entry_amount / price)
         if qty < 1: return 
         
-        name = get_stock_name(code) # 종목명 변환
-        
         try:
-            if 'order_cash' not in globals():
-                self.log("주문 모듈 없음 - 매수 불가", "ERROR")
-                return
-
             env_dv = "real" if self.mode == "real" else "demo"
-            res = order_cash(
-                env_dv=env_dv, ord_dv="buy", cano=KIS_ACCOUNT_NO, 
-                acnt_prdt_cd=KIS_ACCOUNT_PROD, pdno=code, ord_dvsn="01", 
-                ord_qty=str(qty), ord_unpr="0", excg_id_dvsn_cd="KRX"
-            )
             
-            if not res.empty:
-                self.bought_stocks[code] = {"buy_price": price, "qty": qty, "high_price": price, "name": name, "suspended": False}
-                self.log(f"매수: {name}({code}) {qty}주 @ {price}원 ({reason})", "BUY")
-                self.save_trade_log("BUY", code, price, qty, 0, reason)
-                # 매매 후 잔고 업데이트
-                self.update_account_info()
-            else:
-                self.log(f"매수 실패({name})", "ERROR")
+            if self.market_type == "domestic":
+                # 국내주식 매수
+                if 'order_cash' not in globals():
+                    self.log("주문 모듈 없음 - 매수 불가", "ERROR")
+                    return
+                
+                name = get_stock_name(code)
+                # kis_auth가 선택한 계좌 사용
+                res = order_cash(
+                    env_dv=env_dv, ord_dv="buy", cano=ka.getTREnv().my_acct, 
+                    acnt_prdt_cd=ka.getTREnv().my_prod, pdno=code, ord_dvsn="01", 
+                    ord_qty=str(qty), ord_unpr="0", excg_id_dvsn_cd="KRX"
+                )
+                
+                if not res.empty:
+                    self.bought_stocks[code] = {"buy_price": price, "qty": qty, "high_price": price, "name": name, "suspended": False}
+                    self.log(f"매수: {name}({code}) {qty}주 @ {price:,.0f}원 ({reason})", "BUY")
+                    self.save_trade_log("BUY", code, price, qty, 0, reason)
+                    self.update_account_info()
+                else:
+                    self.log(f"매수 실패({name})", "ERROR")
+            
+            else:  # overseas
+                # 해외주식 매수
+                if not OVERSEAS_AVAILABLE or 'overseas_order' not in globals():
+                    self.log("해외주식 모듈 없음 - 매수 불가", "ERROR")
+                    return
+                
+                name = code  # 해외주식은 티커 사용
+                # kis_auth가 선택한 계좌 사용
+                res = overseas_order(
+                    cano=ka.getTREnv().my_acct,
+                    acnt_prdt_cd=ka.getTREnv().my_prod,
+                    ovrs_excg_cd=self.overseas_exchange,
+                    pdno=code,
+                    ord_qty=str(qty),
+                    ovrs_ord_unpr="0",  # 시장가
+                    ord_dv="buy",
+                    env_dv=env_dv
+                )
+                
+                if res is not None and not res.empty:
+                    self.bought_stocks[code] = {"buy_price": price, "qty": qty, "high_price": price, "name": name, "suspended": False}
+                    self.log(f"매수: {name} {qty}shares @ ${price:.2f} ({reason})", "BUY")
+                    self.save_trade_log("BUY", code, price, qty, 0, reason)
+                    self.update_account_info()
+                else:
+                    self.log(f"매수 실패({name})", "ERROR")
+                    
         except Exception as e:
             self.log(f"매수 오류: {e}", "ERROR")
 
     def sell_stock(self, code, price, profit, reason):
         if code not in self.bought_stocks: return
         qty = self.bought_stocks[code]['qty']
-        name = get_stock_name(code) # 종목명 변환
         
         try:
-            if 'order_cash' not in globals():
-                self.log("주문 모듈 없음 - 매도 불가", "ERROR")
-                return
-
             env_dv = "real" if self.mode == "real" else "demo"
-            res = order_cash(
-                env_dv=env_dv, ord_dv="sell", cano=KIS_ACCOUNT_NO, 
-                acnt_prdt_cd=KIS_ACCOUNT_PROD, pdno=code, ord_dvsn="01", 
-                ord_qty=str(qty), ord_unpr="0", excg_id_dvsn_cd="KRX"
-            )
             
-            if not res.empty:
-                profit_amount = (price - self.bought_stocks[code]['buy_price']) * qty
-                self.daily_profit += profit_amount
-                self.trade_count += 1
-                if profit_amount > 0: self.win_count += 1
+            if self.market_type == "domestic":
+                # 국내주식 매도
+                if 'order_cash' not in globals():
+                    self.log("주문 모듈 없음 - 매도 불가", "ERROR")
+                    return
                 
-                self.log(f"매도: {name}({code}) {qty}주 (수익: {profit:.2f}%) {reason}", "SELL")
-                self.save_trade_log("SELL", code, price, qty, profit, reason)
-                del self.bought_stocks[code]
-                # 매매 후 잔고 업데이트
-                self.update_account_info()
-            else:
-                self.log(f"매도 실패({name})", "ERROR")
+                name = get_stock_name(code)
+                # kis_auth가 선택한 계좌 사용
+                res = order_cash(
+                    env_dv=env_dv, ord_dv="sell", cano=ka.getTREnv().my_acct, 
+                    acnt_prdt_cd=ka.getTREnv().my_prod, pdno=code, ord_dvsn="01", 
+                    ord_qty=str(qty), ord_unpr="0", excg_id_dvsn_cd="KRX"
+                )
+                
+                if not res.empty:
+                    del self.bought_stocks[code]
+                    self.log(f"매도: {name}({code}) {qty}주 @ {price:,.0f}원 수익률 {profit:.2f}% ({reason})", "SELL")
+                    self.save_trade_log("SELL", code, price, qty, profit, reason)
+                    self.daily_profit += (price - self.bought_stocks.get(code, {}).get('buy_price', price)) * qty
+                    if profit > 0: self.win_count += 1
+                    self.trade_count += 1
+                    self.update_account_info()
+                else:
+                    self.log(f"매도 실패({name})", "ERROR")
+            
+            else:  # overseas
+                # 해외주식 매도
+                if not OVERSEAS_AVAILABLE or 'overseas_order' not in globals():
+                    self.log("해외주식 모듈 없음 - 매도 불가", "ERROR")
+                    return
+                
+                name = code
+                # kis_auth가 선택한 계좌 사용
+                res = overseas_order(
+                    cano=ka.getTREnv().my_acct,
+                    acnt_prdt_cd=ka.getTREnv().my_prod,
+                    ovrs_excg_cd=self.overseas_exchange,
+                    pdno=code,
+                    ord_qty=str(qty),
+                    ovrs_ord_unpr="0",  # 시장가
+                    ord_dv="sell",
+                    env_dv=env_dv
+                )
+                
+                if res is not None and not res.empty:
+                    buy_price = self.bought_stocks[code]['buy_price']
+                    del self.bought_stocks[code]
+                    self.log(f"매도: {name} {qty}shares @ ${price:.2f} 수익률 {profit:.2f}% ({reason})", "SELL")
+                    self.save_trade_log("SELL", code, price, qty, profit, reason)
+                    self.daily_profit += (price - buy_price) * qty
+                    if profit > 0: self.win_count += 1
+                    self.trade_count += 1
+                    self.update_account_info()
+                else:
+                    self.log(f"매도 실패({name})", "ERROR")
+                    
         except Exception as e:
             self.log(f"매도 오류: {e}", "ERROR")
 
@@ -934,7 +1086,10 @@ def status():
             "reason": bot.market_reason,
             "targetProfit": bot.target_profit,
             "stopLoss": bot.stop_loss
-        }
+        },
+        "marketType": bot.market_type,
+        "currency": bot.currency,
+        "overseasExchange": bot.overseas_exchange
     }
     return convert_numpy(response_data)
 
@@ -948,6 +1103,12 @@ def stop(): bot.is_running = False; return {"status": "stopped"}
 def change_mode(payload: ModeChange):
     bot.change_mode(payload.mode)
     return {"status": "ok", "mode": bot.mode}
+
+@app.post("/api/market")
+def change_market(payload: ModeChange):
+    """Change between domestic and overseas markets"""
+    bot.change_market(payload.mode)
+    return {"status": "ok", "market": bot.market_type, "currency": bot.currency}
 
 # 수정됨: HTML 파일을 읽는 대신 변수에 저장된 HTML 콘텐츠를 반환
 @app.get("/", response_class=HTMLResponse)

@@ -1,0 +1,13 @@
+{
+    "005930": {
+        "buy_price": 178000.0,
+        "qty": 1,
+        "high_price": 178000.0,
+        "name": "\uc0bc\uc131\uc804\uc790",
+        "entry_time": "12:43:56",
+        "stop_price": 177631.42857142858,
+        "take_price": 178368.57142857142,
+        "atr": 460.7142857142857,
+        "reason": "BULL \ub20c\ub9bc+\ud2b8\ub9ac\uac70"
+    }
+}

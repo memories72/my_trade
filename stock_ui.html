@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>QUANTUM TRADER PRO</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1628 100%);
+      color: #e0e6ed;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-20px) rotate(5deg); }
+    }
+    .bg-pattern {
+      position: fixed; top:0; left:0; width:100%; height:100%;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(0, 255, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(255, 0, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(0, 100, 255, 0.03) 0%, transparent 70%);
+      pointer-events:none;
+      animation: float 20s ease-in-out infinite;
+    }
+    .grid-overlay {
+      position: fixed; top:0; left:0; width:100%; height:100%;
+      background-image:
+        linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events:none;
+      opacity:0.3;
+    }
+    .container { position:relative; z-index:1; max-width:1920px; margin:0 auto; padding:2rem; }
+    .neon-text {
+      font-family:'Orbitron', sans-serif;
+      text-shadow: 0 0 10px rgba(0,255,255,0.8), 0 0 20px rgba(0,255,255,0.5), 0 0 30px rgba(0,255,255,0.3);
+    }
+    .glass-card {
+      background: rgba(15,23,42,0.7);
+      backdrop-filter: blur(10px);
+      border:1px solid rgba(255,255,255,0.1);
+      border-radius:16px;
+      transition:all 0.3s ease;
+    }
+    .glass-card:hover { border-color: rgba(0,255,255,0.3); transform: translateY(-2px); }
+    .btn-primary {
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+      border:none; color:#0a0e27; font-weight:600; font-family:'Orbitron', sans-serif;
+      padding:0.75rem 2rem; border-radius:12px; cursor:pointer; transition: all 0.3s ease;
+      box-shadow:0 4px 20px rgba(0,212,255,0.3);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(0,212,255,0.5); }
+    .btn-danger { background: linear-gradient(135deg, #ff0080 0%, #cc0066 100%); box-shadow:0 4px 20px rgba(255,0,128,0.3); }
+    .btn-danger:hover { box-shadow:0 6px 30px rgba(255,0,128,0.5); }
+
+    .status-badge {
+      display:inline-flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
+      border-radius:20px; font-size:0.85rem; font-weight:600; font-family:'Orbitron', sans-serif;
+      text-transform:uppercase; letter-spacing:1px;
+    }
+    .status-running {
+      background: linear-gradient(135deg, rgba(0,255,0,0.2), rgba(0,200,0,0.3));
+      color:#00ff00; border:1px solid rgba(0,255,0,0.5); animation: pulse-green 2s ease-in-out infinite;
+    }
+    .status-stopped {
+      background: linear-gradient(135deg, rgba(255,0,0,0.2), rgba(200,0,0,0.3));
+      color:#ff4444; border:1px solid rgba(255,0,0,0.5);
+    }
+    @keyframes pulse-green { 0%,100%{ box-shadow:0 0 10px rgba(0,255,0,0.5);} 50%{ box-shadow:0 0 20px rgba(0,255,0,0.8);} }
+    .pulse-dot { width:8px; height:8px; border-radius:50%; background: currentColor; animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:0.5; transform:scale(1.3);} }
+
+    .table-container { overflow-x:auto; border-radius:12px; border:1px solid rgba(255,255,255,0.1); }
+    table { width:100%; border-collapse:collapse; }
+    thead { background: rgba(0,255,255,0.1); border-bottom:2px solid rgba(0,255,255,0.3); }
+    th {
+      padding:1rem; text-align:left; font-family:'Orbitron', sans-serif; font-weight:600;
+      text-transform:uppercase; font-size:0.75rem; letter-spacing:1px; color:#00ffff;
+      white-space:nowrap;
+    }
+    td { padding:1rem; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.9rem; vertical-align:top; }
+    tbody tr { transition: background 0.2s ease; }
+    tbody tr:hover { background: rgba(0,255,255,0.05); }
+
+    .log-container {
+      height: 420px; overflow-y:auto; background: rgba(0,0,0,0.35);
+      border-radius:12px; padding:1rem; font-family:'JetBrains Mono', monospace; font-size:0.85rem;
+      border:1px solid rgba(255,255,255,0.1);
+    }
+    .log-entry { padding:0.5rem; border-left:3px solid transparent; margin-bottom:0.25rem; }
+    .log-buy { border-left-color:#00ff00; color:#00ff88; }
+    .log-sell { border-left-color:#ff0080; color:#ff66aa; }
+    .log-error { border-left-color:#ff4444; color:#ff6666; }
+    .log-system { border-left-color:#00d4ff; color:#00d4ff; }
+    .log-info { border-left-color:#888; color:#ddd; }
+
+    .stat-card {
+      background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(0,100,200,0.1));
+      padding:1.5rem; border-radius:16px; border:1px solid rgba(0,212,255,0.3);
+    }
+    .stat-label {
+      font-size:0.75rem; text-transform:uppercase; letter-spacing:1px; color:#00d4ff;
+      font-family:'Orbitron', sans-serif; margin-bottom:0.5rem;
+    }
+    .stat-value { font-size:1.6rem; font-weight:700; font-family:'Orbitron', sans-serif; color:#fff; }
+    .profit-positive { color:#00ff88; text-shadow:0 0 10px rgba(0,255,136,0.5); }
+    .profit-negative { color:#ff4466; text-shadow:0 0 10px rgba(255,68,102,0.5); }
+
+    .mode-toggle { display:flex; gap:0.5rem; background:rgba(0,0,0,0.3); padding:0.25rem; border-radius:12px; border:1px solid rgba(255,255,255,0.1); }
+    .mode-btn {
+      padding:0.5rem 1.5rem; border-radius:8px; border:none; background:transparent;
+      color:#888; cursor:pointer; transition:all 0.3s ease; font-family:'Orbitron', sans-serif; font-size:0.85rem; font-weight:600;
+    }
+    .mode-btn.active { background: linear-gradient(135deg, #00d4ff, #0099cc); color:#0a0e27; box-shadow:0 2px 10px rgba(0,212,255,0.3); }
+
+    .chip {
+      display:inline-flex; align-items:center; gap:0.4rem;
+      padding:0.35rem 0.65rem; border-radius:999px;
+      border:1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      font-size:0.8rem;
+      cursor:pointer;
+      user-select:none;
+    }
+    .chip.active {
+      border-color: rgba(0,255,255,0.35);
+      box-shadow: 0 0 18px rgba(0,255,255,0.12);
+      color: #aefcff;
+    }
+
+    .btn-x {
+      width:32px; height:32px; border-radius:10px;
+      border: 1px solid rgba(255,0,128,0.35);
+      background: rgba(255,0,128,0.12);
+      color: #ff66aa;
+      cursor:pointer;
+      font-weight:800;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .btn-x:disabled { opacity:0.4; cursor:not-allowed; }
+  </style>
+</head>
+
+<body>
+<div class="bg-pattern"></div>
+<div class="grid-overlay"></div>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+function App(){
+  const [status, setStatus] = useState({
+    isRunning:false,
+    mode:'paper',
+    profile:'BALANCED',
+    profileParams:{},
+    stocks:{},
+    target_info:{},
+    orders:{ updatedAt:null, items:[] },
+    logs:[],
+    summary:{ dailyProfit:0, tradeCount:0, winCount:0 },
+    config:{ market:'SIDEWAYS' },
+    account:{ updatedAt:null, summary:{}, positions:[] },
+  });
+
+  useEffect(() => {
+    fetchStatus();
+    const t = setInterval(fetchStatus, 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  const fetchStatus = async () => {
+    try{
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      setStatus(data);
+    }catch(e){
+      console.error(e);
+    }
+  };
+
+  const handleStart = async () => {
+    await fetch('/api/start', { method:'POST' });
+    fetchStatus();
+  };
+  const handleStop = async () => {
+    await fetch('/api/stop', { method:'POST' });
+    fetchStatus();
+  };
+  const handleModeChange = async (mode) => {
+    await fetch('/api/mode', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    fetchStatus();
+  };
+
+  const handleProfile = async (profile) => {
+    await fetch('/api/profile', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ profile })
+    });
+    fetchStatus();
+  };
+
+  const handleCancel = async (o) => {
+    // o: status.orders.items[x]
+    const payload = {
+      krx_fwdg_ord_orgno: o.krx_fwdg_ord_orgno,
+      orgn_odno: o.orgn_odno,
+      ord_dvsn: o.ord_dvsn || "01",
+      ord_qty: o.psbl_qty && o.psbl_qty !== "0" ? o.psbl_qty : (o.ord_qty || "0"),
+      ord_unpr: o.ord_unpr || "0",
+      qty_all_ord_yn: "Y",
+      excg_id_dvsn_cd: "KRX",
+    };
+    await fetch('/api/order/cancel', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    fetchStatus();
+  };
+
+  const formatNumber = (num) => new Intl.NumberFormat('ko-KR').format(Number(num||0));
+  const formatPrice = (num) => new Intl.NumberFormat('ko-KR', { maximumFractionDigits:0 }).format(Number(num||0));
+
+  // ✅ UI 보유목록 = 계좌 보유(account.positions) 우선 + 전략보유(stocks) 병합
+  const mergedHoldings = useMemo(() => {
+    const pos = (status.account && status.account.positions) ? status.account.positions : [];
+    const botStocks = status.stocks || {};
+    const map = new Map();
+
+    // account.positions
+    for(const p of pos){
+      const code = String(p.pdno || '').trim();
+      if(!code) continue;
+      map.set(code, {
+        code,
+        name: p.name || p.prdt_name || code,
+        // KIS 원본
+        hldg_qty: Number(p.hldg_qty_int ?? p.hldg_qty ?? 0),
+        buy_today: Number(p.buy_today_int ?? p.thdt_buyqty ?? 0),
+        sell_today: Number(p.sell_today_int ?? p.thdt_sll_qty ?? 0),
+        net_today: Number(p.net_today_int ?? 0),
+        pchs_avg_pric: Number(p.pchs_avg_pric ?? 0),
+        prpr: Number(p.prpr ?? 0),
+        source: 'account',
+      });
+    }
+
+    // bot internal holdings
+    for(const [code, b] of Object.entries(botStocks)){
+      const prev = map.get(code) || { code, name: b.name || code };
+      map.set(code, {
+        ...prev,
+        code,
+        name: prev.name || b.name || code,
+        bot_qty: Number(b.qty || 0),
+        bot_buy_price: Number(b.buy_price || 0),
+        bot_pending: Boolean(b.pending),
+        bot_odno: b.odno || "",
+        source: prev.source ? 'both' : 'bot',
+      });
+    }
+
+    return Array.from(map.values());
+  }, [status.account, status.stocks]);
+
+  const calcProfitPct = (row) => {
+    const cur = status.target_info?.[row.code]?.price;
+    const buy = row.bot_buy_price || row.pchs_avg_pric || 0;
+    if(!cur || !buy) return null;
+    return ((cur - buy) / buy * 100);
+  };
+
+  const cashTotal = status.account?.summary?.cashTotal ?? 0;
+  const cashAvailable = status.account?.summary?.cashAvailable ?? 0;
+  const totalEval = status.account?.summary?.totalEval ?? 0;
+
+  const profileList = ["CONSERVATIVE","BALANCED","AGGRESSIVE","SIDEWAYS"];
+
+  return (
+    <div className="container">
+      {/* Header */}
+      <header className="mb-8">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-4xl font-black neon-text mb-2" style={{fontFamily:'Orbitron'}}>
+              QUANTUM TRADER
+            </h1>
+            <p className="text-sm text-gray-400">Algorithmic Trading System v2.2</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {profileList.map(p => (
+                <div
+                  key={p}
+                  className={`chip ${status.profile===p ? 'active' : ''}`}
+                  onClick={() => handleProfile(p)}
+                  title="상황별 조건(프로필) 자동 전환"
+                >
+                  <span style={{fontFamily:'Orbitron'}}>{p}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className={`status-badge ${status.isRunning ? 'status-running' : 'status-stopped'}`}>
+              <div className="pulse-dot"></div>
+              {status.isRunning ? 'ACTIVE' : 'STANDBY'}
+            </div>
+
+            <div className="mode-toggle">
+              <button className={`mode-btn ${status.mode==='paper' ? 'active' : ''}`} onClick={() => handleModeChange('paper')}>PAPER</button>
+              <button className={`mode-btn ${status.mode==='real' ? 'active' : ''}`} onClick={() => handleModeChange('real')}>REAL</button>
+            </div>
+
+            {!status.isRunning ? (
+              <button className="btn-primary" onClick={handleStart}>▶ START</button>
+            ) : (
+              <button className="btn-primary btn-danger" onClick={handleStop}>■ STOP</button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="stat-card">
+          <div className="stat-label">Daily P&L</div>
+          <div className={`stat-value ${status.summary.dailyProfit >= 0 ? 'profit-positive' : 'profit-negative'}`}>
+            {status.summary.dailyProfit >= 0 ? '+' : ''}{formatNumber(status.summary.dailyProfit)}원
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">Trade Count</div>
+          <div className="stat-value">{status.summary.tradeCount}</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">Win Rate</div>
+          <div className="stat-value">
+            {status.summary.tradeCount > 0 ? ((status.summary.winCount/status.summary.tradeCount)*100).toFixed(1) : 0}%
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">Cash (Available)</div>
+          <div className="stat-value">{formatNumber(cashAvailable)}원</div>
+          <div className="text-xs text-gray-400 mt-1">총예수금: {formatNumber(cashTotal)}원</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">Total Eval</div>
+          <div className="stat-value">{formatNumber(totalEval)}원</div>
+          <div className="text-xs mt-1" style={{
+            color: status.config.market==='BULL' ? '#00ff88' : status.config.market==='BEAR' ? '#ff4466' : '#00d4ff'
+          }}>
+            MARKET: {status.config.market} / PROFILE: {status.profile}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Holdings */}
+        <div className="lg:col-span-2 glass-card p-6">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2" style={{fontFamily:'Orbitron'}}>
+            <span className="text-cyan-400">◆</span> HOLDINGS (Account + Bot)
+          </h2>
+
+          {mergedHoldings.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <div className="text-4xl mb-2">📊</div>
+              <p>보유/관심 종목이 없습니다</p>
+            </div>
+          ) : (
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>종목</th>
+                    <th>수량</th>
+                    <th>매수가(평균)</th>
+                    <th>현재가</th>
+                    <th>수익률</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mergedHoldings.map(row => {
+                    const cur = status.target_info?.[row.code]?.price;
+                    const pct = calcProfitPct(row);
+                    const showQty = (row.hldg_qty && row.hldg_qty > 0) ? row.hldg_qty : (row.net_today && row.net_today > 0 ? row.net_today : (row.bot_qty || 0));
+                    const stateText =
+                      row.bot_pending ? `BOT PENDING${row.bot_odno ? ` (${row.bot_odno})` : ''}` :
+                      (row.hldg_qty > 0 ? 'HOLD' : (row.buy_today || row.sell_today ? 'TODAY NET' : '-'));
+
+                    return (
+                      <tr key={row.code}>
+                        <td>
+                          <div className="font-semibold">{row.name}</div>
+                          <div className="text-xs text-gray-500">{row.code}</div>
+                          {(row.buy_today || row.sell_today) ? (
+                            <div className="text-xs text-gray-400 mt-1">
+                              오늘 매수 {row.buy_today||0} / 매도 {row.sell_today||0} / 순매수 {row.net_today||0}
+                            </div>
+                          ) : null}
+                        </td>
+
+                        <td>{formatNumber(showQty)}주</td>
+
+                        <td>
+                          {row.bot_buy_price ? (
+                            <div>
+                              <div>{formatPrice(row.bot_buy_price)}원</div>
+                              <div className="text-xs text-gray-400 mt-1">BOT</div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div>{formatPrice(row.pchs_avg_pric || 0)}원</div>
+                              <div className="text-xs text-gray-400 mt-1">계좌평균</div>
+                            </div>
+                          )}
+                        </td>
+
+                        <td>{cur ? `${formatPrice(cur)}원` : '-'}</td>
+
+                        <td>
+                          {pct === null ? '-' : (
+                            <span className={pct >= 0 ? 'profit-positive' : 'profit-negative'}>
+                              {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="text-sm text-gray-300">
+                          {stateText}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Orders (Pending) */}
+        <div className="glass-card p-6">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2" style={{fontFamily:'Orbitron'}}>
+            <span className="text-cyan-400">◆</span> PENDING ORDERS
+          </h2>
+
+          <div className="text-xs text-gray-400 mb-3">
+            updated: {status.orders?.updatedAt || '-'}
+          </div>
+
+          {(!status.orders || !status.orders.items || status.orders.items.length === 0) ? (
+            <div className="text-center py-10 text-gray-500">
+              <div className="text-3xl mb-2">🧾</div>
+              <p>대기 주문이 없습니다</p>
+            </div>
+          ) : (
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>종목</th>
+                    <th>구분</th>
+                    <th>가능수량</th>
+                    <th>주문번호</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {status.orders.items.map(o => {
+                    const canCancel = String(o.psbl_qty || "0") !== "0";
+                    return (
+                      <tr key={o.id}>
+                        <td>
+                          <div className="font-semibold">{o.name}</div>
+                          <div className="text-xs text-gray-500">{o.pdno}</div>
+                        </td>
+                        <td>{o.side}</td>
+                        <td>{formatNumber(o.psbl_qty || 0)}</td>
+                        <td className="text-xs">{o.orgn_odno}</td>
+                        <td>
+                          <button
+                            className="btn-x"
+                            disabled={!canCancel}
+                            title={canCancel ? "주문 취소" : "취소 가능수량 0"}
+                            onClick={() => handleCancel(o)}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="mt-4 text-xs text-gray-500">
+            * “0주로 보이는 종목”은 <b>당일 매수/매도 상쇄</b> 또는 <b>반영 지연</b>일 수 있어요. 위 HOLDINGS에서 “오늘 매수/매도/순매수”도 같이 확인하세요.
+          </div>
+        </div>
+      </div>
+
+      {/* Logs */}
+      <div className="glass-card p-6 mt-6">
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2" style={{fontFamily:'Orbitron'}}>
+          <span className="text-cyan-400">◆</span> SYSTEM LOGS
+        </h2>
+
+        <div className="log-container">
+          {(!status.logs || status.logs.length === 0) ? (
+            <div className="text-center text-gray-500 py-8">대기 중...</div>
+          ) : (
+            status.logs.map((log, idx) => {
+              const cls = `log-entry log-${String(log.type||'info').toLowerCase()}`;
+              const who = log.name ? `${log.name}(${log.code||''})` : (log.code || '');
+              const extra = log.extra && Object.keys(log.extra).length
+                ? Object.entries(log.extra).map(([k,v]) => `${k}=${v}`).join(' ')
+                : '';
+              return (
+                <div key={idx} className={cls}>
+                  <span className="text-gray-500">[{log.time}]</span>{' '}
+                  <span className="text-gray-300" style={{fontFamily:'Orbitron'}}>
+                    {status.mode.toUpperCase()}
+                  </span>
+                  {who ? <span className="text-gray-400"> · {who}</span> : null}
+                  <div className="mt-1">
+                    <span>{log.msg}</span>
+                    {extra ? <span className="text-gray-400"> {' '}| {extra}</span> : null}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <footer className="mt-8 text-center text-xs text-gray-600">
+        <p>⚠️ 투자에 대한 모든 책임은 투자자 본인에게 있습니다</p>
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>

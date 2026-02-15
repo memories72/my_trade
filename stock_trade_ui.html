@@ -83,6 +83,8 @@
             const [status, setStatus] = useState({
                 isRunning: false,
                 mode: 'paper',
+                marketType: 'domestic',
+                currency: 'KRW',
                 balance: 0,
                 totalBuyAmount: 0,
                 stocks: {},
@@ -113,6 +115,14 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mode })
+                });
+                fetchStatus();
+            };
+            const handleMarket = async (market) => {
+                await fetch('/api/market', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: market })
                 });
                 fetchStatus();
             };
@@ -149,6 +159,11 @@
                                 <button onClick={() => handleMode('real')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${status.mode === 'real' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/50' : 'text-slate-500 hover:text-slate-300'}`}>실전투자</button>
                             </div>
 
+                            <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                <button onClick={() => handleMarket('domestic')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${status.marketType === 'domestic' ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/50' : 'text-slate-500 hover:text-slate-300'}`}>🇰🇷 국내</button>
+                                <button onClick={() => handleMarket('overseas')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${status.marketType === 'overseas' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50' : 'text-slate-500 hover:text-slate-300'}`}>🇺🇸 해외</button>
+                            </div>
+
                             <button onClick={status.isRunning ? handleStop : handleStart} className={`px-6 py-2 rounded-lg font-bold border transition-all shadow-lg transform active:scale-95 ${status.isRunning ? 'bg-red-600 hover:bg-red-500 border-red-400 text-white shadow-red-900/50' : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-cyan-900/50'}`}>
                                 {status.isRunning ? '시스템 종료' : '시스템 시작'}
                             </button>
@@ -164,11 +179,11 @@
                             <div className="space-y-3 font-mono text-sm">
                                 <div className="flex justify-between items-center">
                                     <span className="text-slate-400 text-xs uppercase">매수평가금</span>
-                                    <span className="text-white font-bold text-lg">{fmtNum(status.totalBuyAmount)} <span className="text-xs font-normal text-slate-500">원</span></span>
+                                    <span className="text-white font-bold text-lg">{status.currency === 'KRW' ? fmtNum(status.totalBuyAmount) + ' 원' : '$' + fmtNum(status.totalBuyAmount)}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-slate-400 text-xs uppercase">보유현금</span>
-                                    <span className="text-cyan-300 font-bold text-lg">{fmtNum(status.balance)} <span className="text-xs font-normal text-slate-500">원</span></span>
+                                    <span className="text-cyan-300 font-bold text-lg">{status.currency === 'KRW' ? fmtNum(status.balance) + ' 원' : '$' + fmtNum(status.balance)}</span>
                                 </div>
                             </div>
                             <div className="mt-4">
@@ -186,7 +201,7 @@
                         <div className={`glass-panel p-6 rounded-2xl border-l-4 relative overflow-hidden group hover:bg-slate-800/50 transition-colors ${status.summary.dailyProfit >= 0 ? 'border-l-blue-500' : 'border-l-pink-500'}`}>
                             <h3 className={`text-xs font-bold tracking-widest uppercase mb-2 ${status.summary.dailyProfit >= 0 ? 'text-blue-400' : 'text-pink-400'}`}>📊 일일 수익률</h3>
                             <div className={`text-3xl font-black font-mono mt-4 ${status.summary.dailyProfit >= 0 ? 'text-blue-400' : 'text-pink-400'}`}>
-                                {status.summary.dailyProfit > 0 ? '+' : ''}{fmtNum(status.summary.dailyProfit)} <span className="text-sm font-normal text-slate-500">원</span>
+                                {status.summary.dailyProfit > 0 ? '+' : ''}{status.currency === 'KRW' ? fmtNum(status.summary.dailyProfit) + ' 원' : '$' + fmtNum(status.summary.dailyProfit)}
                             </div>
                             <p className="text-xs text-slate-500 mt-2">오늘 실현 손익</p>
                         </div>

@@ -1,0 +1,33 @@
+{
+    "coins": {
+        "KRW-PENGU": {
+            "ticker": "KRW-PENGU",
+            "buy_price": 8.79,
+            "buy_time": 1770796084.021836,
+            "profit_rate": 3.526734926052338,
+            "high_price": 9.71
+        },
+        "KRW-AERGO": {
+            "ticker": "KRW-AERGO",
+            "buy_price": 83.0,
+            "buy_time": 1770944975.9149399,
+            "profit_rate": 0.0,
+            "high_price": 86.7
+        },
+        "KRW-PUNDIX": {
+            "ticker": "KRW-PUNDIX",
+            "buy_price": 243.0,
+            "buy_time": 1770945407.930599,
+            "profit_rate": 0.0,
+            "high_price": 252.0
+        },
+        "KRW-CARV": {
+            "ticker": "KRW-CARV",
+            "buy_price": 93.7,
+            "buy_time": 1770949399.218185,
+            "profit_rate": 0.0,
+            "high_price": 103.0
+        }
+    },
+    "balance": 971801.8723973131
+}

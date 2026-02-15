@@ -1,0 +1,50 @@
+{
+    "KRW-BTC": {
+        "ticker": "KRW-BTC",
+        "buy_price": 102167000.0,
+        "buy_time": 1771078061.320076,
+        "profit_rate": 0,
+        "high_price": 103241000.0,
+        "amount": 0.0048939
+    },
+    "KRW-ETH": {
+        "ticker": "KRW-ETH",
+        "buy_price": 3053000.0,
+        "buy_time": 1771078061.320086,
+        "profit_rate": 0,
+        "high_price": 3085000.0,
+        "amount": 0.16377333
+    },
+    "KRW-XRP": {
+        "ticker": "KRW-XRP",
+        "buy_price": 2147.0,
+        "buy_time": 1771078061.320092,
+        "profit_rate": 0,
+        "high_price": 2273.0,
+        "amount": 232.88309268
+    },
+    "KRW-XCORE": {
+        "ticker": "KRW-XCORE",
+        "buy_price": 0.0,
+        "buy_time": 1771119467.449924,
+        "profit_rate": 0,
+        "high_price": 0.0,
+        "amount": 0.0709147
+    },
+    "KRW-PEPE": {
+        "ticker": "KRW-PEPE",
+        "buy_price": 0.00713,
+        "buy_time": 1771119743.149059,
+        "profit_rate": 0,
+        "high_price": 0.00713,
+        "amount": 14025245.44179523
+    },
+    "KRW-KITE": {
+        "ticker": "KRW-KITE",
+        "buy_price": 305.0,
+        "buy_time": 1771120728.947621,
+        "profit_rate": 0,
+        "high_price": 306.0,
+        "amount": 327.86885245
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "black_list": [],
+    "stop_tickers": [
+        "KRW-XCORE"
+    ],
+    "protect_tickers": [
+        "KRW-BTC",
+        "KRW-ETH",
+        "KRW-XRP"
+    ],
+    "max_hold_minutes": 120
+}

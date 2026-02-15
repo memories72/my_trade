@@ -2,6 +2,7 @@ import pyupbit
 import time
 import json
 import os
+import csv
 import threading
 import uvicorn
 import requests
@@ -775,7 +776,7 @@ class BotState:
         self.target_profit = 1.5
         self.stop_loss = -3.0
         self.rsi_threshold = 50.0
-        self.max_trade_coin_count = 6
+        self.max_trade_coin_count = 5
         self.watch_top_n = 20
         self.trailing_after_tp_drop = -1.0
         self.trailing_general_drop = -2.5
@@ -819,9 +820,12 @@ class BotState:
         self.risky_last_log = {}
         self.exit_confirm = {}
         self.exit_confirm_ttl = 12
-        self.exit_confirm_need_sl = 2
-        self.exit_confirm_need_drop = 2
+        
+        # 시장 적응형 매도 전략 (기본값: SIDEWAYS)
+        self.exit_confirm_need_sl = 3
+        self.exit_confirm_need_drop = 3
         self.exit_confirm_need_tpdrop = 2
+        
         self.auto_tune = True
         self.regime_interval_sec = 60
         self.last_regime_ts = 0
@@ -831,15 +835,12 @@ class BotState:
         self.bear_enter = -0.005
         self.bear_exit  = -0.002
 
-        self.exit_confirm_need_sl = 3
-        self.exit_confirm_need_drop = 3
-        self.exit_confirm_need_tpdrop = 2
-
         self.protect_sell_info = {}
         self.protect_stop_loss = -5.0
 
         self.load_state()
         self.sanitize_positions()
+        self.init_trade_logs()
 
     def load_system_config(self):
         defaults = {
@@ -895,6 +896,67 @@ class BotState:
             self.logs = self.logs[:150]
         if type in ["BUY", "SELL", "ERROR", "SYSTEM", "REPORT", "RISK"]:
             self.send_telegram(f"[{type}] {msg}")
+
+    def init_trade_logs(self):
+        """CSV 로그 파일 초기화 (헤더 생성)"""
+        buy_log_file = "trade_buy_log.csv"
+        sell_log_file = "trade_sell_log.csv"
+        
+        # 매수 로그 파일 초기화
+        if not os.path.exists(buy_log_file):
+            try:
+                with open(buy_log_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['timestamp', 'mode', 'ticker', 'buy_price', 'amount', 'reason', 'rsi'])
+            except Exception as e:
+                print(f"[ERROR] 매수 로그 파일 초기화 실패: {e}")
+        
+        # 매도 로그 파일 초기화
+        if not os.path.exists(sell_log_file):
+            try:
+                with open(sell_log_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['timestamp', 'mode', 'ticker', 'buy_price', 'sell_price', 'profit_rate', 'profit_amount', 'held_time', 'reason'])
+            except Exception as e:
+                print(f"[ERROR] 매도 로그 파일 초기화 실패: {e}")
+
+    def log_buy_transaction(self, ticker, buy_price, amount, reason, rsi=None):
+        """매수 거래를 CSV 파일에 기록"""
+        try:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            with open("trade_buy_log.csv", 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    timestamp,
+                    self.mode,
+                    ticker,
+                    f"{buy_price:.2f}",
+                    f"{amount:.2f}",
+                    reason,
+                    f"{rsi:.1f}" if rsi else ""
+                ])
+        except Exception as e:
+            print(f"[ERROR] 매수 로그 기록 실패: {e}")
+
+    def log_sell_transaction(self, ticker, buy_price, sell_price, profit_rate, profit_amount, held_time, reason):
+        """매도 거래를 CSV 파일에 기록"""
+        try:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            with open("trade_sell_log.csv", 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    timestamp,
+                    self.mode,
+                    ticker,
+                    f"{buy_price:.2f}",
+                    f"{sell_price:.2f}",
+                    f"{profit_rate:.2f}",
+                    f"{profit_amount:.2f}",
+                    f"{held_time:.2f}",
+                    reason
+                ])
+        except Exception as e:
+            print(f"[ERROR] 매도 로그 기록 실패: {e}")
 
     def load_state(self):
         with self.lock:
@@ -1135,14 +1197,32 @@ def analyze_market_condition():
             if nxt != st:
                 bot.market_status = nxt
                 if nxt == "BULL":
-                    bot.target_profit, bot.stop_loss, bot.rsi_threshold = 2.0, -3.0, 60.0
-                    bot.max_hold_minutes, bot.hold_min_profit = 90, 0.6
+                    # 상승장: 여유있는 매도 (고점 포착) - 중단타
+                    bot.target_profit, bot.stop_loss, bot.rsi_threshold = 3.0, -3.0, 60.0
+                    bot.max_hold_minutes, bot.hold_min_profit = 180, 0.8
+                    bot.trailing_after_tp_drop = -1.5
+                    bot.trailing_general_drop = -3.0
+                    bot.exit_confirm_need_sl = 3
+                    bot.exit_confirm_need_drop = 3
+                    bot.exit_confirm_need_tpdrop = 2
                 elif nxt == "BEAR":
-                    bot.target_profit, bot.stop_loss, bot.rsi_threshold = 1.0, -2.0, 30.0
-                    bot.max_hold_minutes, bot.hold_min_profit = 45, 0.3
+                    # 하락장: 빠른 매도 (손실 최소화) - 단타
+                    bot.target_profit, bot.stop_loss, bot.rsi_threshold = 1.5, -2.0, 30.0
+                    bot.max_hold_minutes, bot.hold_min_profit = 60, 0.5
+                    bot.trailing_after_tp_drop = -0.5
+                    bot.trailing_general_drop = -1.5
+                    bot.exit_confirm_need_sl = 2
+                    bot.exit_confirm_need_drop = 2
+                    bot.exit_confirm_need_tpdrop = 1
                 else:
+                    # 횡보장: 짧고 빠르게 (스프레드/수수료 싸움)
                     bot.target_profit, bot.stop_loss, bot.rsi_threshold = 1.5, -3.0, 50.0
-                    bot.max_hold_minutes, bot.hold_min_profit = 60, 0.9
+                    bot.max_hold_minutes, bot.hold_min_profit = 60, 0.5
+                    bot.trailing_after_tp_drop = -1.0
+                    bot.trailing_general_drop = -2.5
+                    bot.exit_confirm_need_sl = 3
+                    bot.exit_confirm_need_drop = 3
+                    bot.exit_confirm_need_tpdrop = 2
                 bot.log(f"시장상태 변경: {nxt} (이격도 {diff*100:.2f}%)", "SYSTEM")
     except: pass
 
@@ -1196,7 +1276,9 @@ def execute_buy(ticker, price, rsi, reason):
         if ticker in cur_coins: return
 
         if ticker not in bot.protect_tickers:
-             if len(cur_coins) >= bot.max_trade_coin_count: return
+             # 보호 코인 제외한 일반 코인 수만 확인
+             non_protect_count = sum(1 for c in cur_coins if c not in bot.protect_tickers)
+             if non_protect_count >= bot.max_trade_coin_count: return
 
     if bot.mode == "real":
         try:
@@ -1231,6 +1313,9 @@ def execute_buy(ticker, price, rsi, reason):
                         }
                         if ticker in bot.protect_sell_info: del bot.protect_sell_info[ticker]
 
+                    # CSV 로그 기록
+                    bot.log_buy_transaction(ticker, real_price, config.TRADE_AMOUNT, reason, rsi)
+                    
                     sync_positions_from_exchange()
                 else:
                     bot.log(f"매수 미체결 취소됨: {ticker}", "SYSTEM")
@@ -1249,6 +1334,10 @@ def execute_buy(ticker, price, rsi, reason):
                 }
                 if ticker in bot.protect_sell_info: del bot.protect_sell_info[ticker]
                 bot.log(f"가상 매수: {ticker}", "BUY")
+                
+                # CSV 로그 기록
+                bot.log_buy_transaction(ticker, float(price), config.TRADE_AMOUNT, reason, rsi)
+                
                 bot.save_state()
 
 def execute_sell(ticker, price, profit, reason):
@@ -1276,8 +1365,23 @@ def execute_sell(ticker, price, profit, reason):
                         elif len(od.get("trades", [])) > 0: is_done = True
 
                     if is_done:
+                        # 실제 체결 가격 및 수익/손실 계산
+                        real_fill = float(od.get("price", price)) if od else price
+                        with bot.lock:
+                            buy_info = bot.real_bought_coins.get(ticker, {})
+                            buy_price = float(buy_info.get("buy_price", 0))
+                            buy_time = float(buy_info.get("buy_time", time.time()))
+                            if buy_price > 0:
+                                actual_profit = (real_fill - buy_price) / buy_price * 100
+                                profit_amount = float(bal) * real_fill - float(bal) * buy_price
+                                sign = "+" if profit_amount >= 0 else ""
+                                bot.log(f"매도 완료: {ticker} {sign}{profit_amount:,.0f}원 ({actual_profit:.2f}%)", "SELL")
+                                
+                                # CSV 로그 기록
+                                held_time = (time.time() - buy_time) / 60  # 분 단위
+                                bot.log_sell_transaction(ticker, buy_price, real_fill, actual_profit, profit_amount, held_time, reason)
+                            
                         if is_protect:
-                            real_fill = float(od.get("price", price)) if od else price
                             with bot.lock:
                                  bot.protect_sell_info[ticker] = {
                                      "price": real_fill, "time": time.time(), "amount": float(bal)
@@ -1294,6 +1398,8 @@ def execute_sell(ticker, price, profit, reason):
             if ticker in bot.paper_bought_coins:
                 info = bot.paper_bought_coins[ticker]
                 amt = float(info.get("amount", config.TRADE_AMOUNT))
+                buy_price = float(info.get("buy_price", 0))
+                buy_time = float(info.get("buy_time", time.time()))
                 ret = amt * (1 + profit/100)
                 bot.paper_balance += ret
 
@@ -1304,7 +1410,15 @@ def execute_sell(ticker, price, profit, reason):
 
                 del bot.paper_bought_coins[ticker]
                 exit_confirm_clear(ticker)
-                bot.log(f"가상 매도: {ticker} ({profit:.2f}%)", "SELL")
+                # 차액 계산 (수익/손실 금액)
+                profit_amount = ret - amt
+                sign = "+" if profit_amount >= 0 else ""
+                bot.log(f"가상 매도: {ticker} {sign}{profit_amount:,.0f}원 ({profit:.2f}%)", "SELL")
+                
+                # CSV 로그 기록
+                held_time = (time.time() - buy_time) / 60  # 분 단위
+                bot.log_sell_transaction(ticker, buy_price, float(price), profit, profit_amount, held_time, reason)
+                
                 bot.save_state()
 
 def sell_all_position(ticker):
@@ -1532,9 +1646,15 @@ def trading_loop():
                             if _should_log_risky(t): bot.log(f"스킵(위험): {t} {why}", "INFO")
                             continue
 
-                        # [수정] 매수 조건 대폭 강화 (손실 방지 핵심 로직)
+                        # [수정] 매수 조건 완화 (기회 확대)
+                        # 급등: 거래량 폭증 + 정배열 (안전한 조건 유지)
                         cond_pump = (pump and ma5 > ma and px > ma)
-                        cond_rsi = (rsi <= bot.rsi_threshold and ma5 > ma and px > ma and px > open_p)
+                        
+                        # RSI 저점: px > ma 조건 제거 (20일선 아래에서도 매수 가능)
+                        cond_rsi = (rsi <= bot.rsi_threshold and ma5 > ma and px > open_p)
+                        
+                        # 과매도 반등: RSI 30 이하 + 양봉 + 5일선 지지 (진입 조건 강화)
+                        cond_oversold = (rsi <= 30 and px > open_p and ma5 > ma)
 
                         if cond_pump:
                              execute_buy(t, px, rsi, "급등/정배열")
@@ -1543,6 +1663,11 @@ def trading_loop():
                              if slots <= 0: break
                         elif cond_rsi:
                              execute_buy(t, px, rsi, "RSI/저점")
+                             safe_sleep(0.5)
+                             slots -= 1
+                             if slots <= 0: break
+                        elif cond_oversold:
+                             execute_buy(t, px, rsi, "과매도/반등")
                              safe_sleep(0.5)
                              slots -= 1
                              if slots <= 0: break
